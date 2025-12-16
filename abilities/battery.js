@@ -1,39 +1,47 @@
-
 module.exports = homebridge => {
   const { Ability } = require('./base')(homebridge)
-  const Characteristic = homebridge.hap.Characteristic
-  const Service = homebridge.hap.Service
+  const { Characteristic, Service } = homebridge.hap
 
   class BatteryAbility extends Ability {
-    /**
-     * @param {string} levelProperty - The device property used to indicate
-     * the current battery level.
-     * @param {boolean} chargeable - Whether the device is chargeable.
-     * @param {string} chargingProperty - The device property used to indicate
-     * whether the device is currently charging.
-     * @param {number} externalPowerValue - A property value indicating that the
-     * device is currently running on an external power supply.
-     */
-    constructor(levelProperty, chargeable = false, chargingProperty = null,
-      externalPowerValue = null) {
+
+    constructor(
+      levelProperty,
+      chargeable = false,
+      chargingProperty = null,
+      externalPowerValue = null
+    ) {
       super()
 
       this._levelProperty = levelProperty
       this._chargeable = chargeable
       this._chargingProperty = chargingProperty
       this._externalPowerValue = externalPowerValue
+
+      // subtype fisso e stabile (obbligatorio HB 2.0)
+      this._subtype = 'battery'
     }
 
+    /**
+     * Restituisce SEMPRE lo stesso servizio,
+     * senza crearne duplicati
+     */
     get service() {
-      return this.platformAccessory.getService(Service.BatteryService)
+      let service =
+        this.platformAccessory.getService(Service.Battery) ||
+        this.platformAccessory.getServiceById(Service.Battery, this._subtype)
+
+      if (!service) {
+        service = this._createService()
+        this.platformAccessory.addService(service)
+      }
+
+      return service
     }
 
     get level() {
       const v = this.device[this._levelProperty]
 
       if (v === this._externalPowerValue) {
-        // set the battery level to 100% when running on an external power
-        // supply
         return 100
       }
 
@@ -53,14 +61,26 @@ module.exports = homebridge => {
 
     get statusLow() {
       const SLB = Characteristic.StatusLowBattery
-      return this.level < 10 ? SLB.BATTERY_LEVEL_LOW : SLB.BATTERY_LEVEL_NORMAL
+      return this.level < 10
+        ? SLB.BATTERY_LEVEL_LOW
+        : SLB.BATTERY_LEVEL_NORMAL
     }
 
+    /**
+     * Crea il servizio UNA SOLA VOLTA
+     */
     _createService() {
-      return new Service.BatteryService()
+      const service = new Service.Battery(this.name, this._subtype)
+
+      service
         .setCharacteristic(Characteristic.BatteryLevel, this.level)
         .setCharacteristic(Characteristic.ChargingState, this.chargingState)
-        .setCharacteristic(Characteristic.StatusLowBattery, this.statusLow)
+        .setCharacteristic(
+          Characteristic.StatusLowBattery,
+          this.statusLow
+        )
+
+      return service
     }
 
     _setupEventHandlers() {
@@ -81,9 +101,6 @@ module.exports = homebridge => {
       }
     }
 
-    /**
-     * Handles changes from the device to the level property.
-     */
     _levelChangeHandler(newValue) {
       this.log.debug(
         this._levelProperty,
@@ -97,12 +114,12 @@ module.exports = homebridge => {
 
       this.service
         .setCharacteristic(Characteristic.BatteryLevel, this.level)
-        .setCharacteristic(Characteristic.StatusLowBattery, this.statusLow)
+        .setCharacteristic(
+          Characteristic.StatusLowBattery,
+          this.statusLow
+        )
     }
 
-    /**
-     * Handles changes from the device to the charging property.
-     */
     _chargingChangeHandler(newValue) {
       this.log.debug(
         this._chargingProperty,
@@ -140,3 +157,4 @@ module.exports = homebridge => {
 
   return BatteryAbility
 }
+
